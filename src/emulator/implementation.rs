@@ -1,8 +1,16 @@
+#![feature(no_more_cas)]
 use super::common::{Error, Result};
 use super::display;
 use super::interpreter::*;
 use log::debug;
-use std::io::Read;
+use std::sync::{
+    atomic::{AtomicU8, Ordering},
+    Arc,
+};
+use std::{io::Read, thread, time::Duration};
+#[macro_use]
+use crossbeam_channel::select;
+use rand::Rng;
 
 const REG_COUNT: usize = 16;
 const MEM_SIZE: usize = 4096;
@@ -87,6 +95,7 @@ impl Emulator {
 
         emu.memory[..80].copy_from_slice(&FONT_SET[..]);
         emu.load_rom(rom_data)?;
+
         Ok(emu)
     }
 
@@ -125,22 +134,44 @@ impl Emulator {
     }
 
     pub fn step(&mut self) -> StepResult {
+        // decrease delay timer
+        if self.dt > 0 {
+            self.dt -= 1;
+        }
+
+        // decrease sound timer
+        if self.st > 0 {
+            self.st -= 1;
+        }
+
         match self.next_instruction() {
             Some(ins) => {
                 let op = ins.interpret()?;
                 debug!("{}\t{}", ins, op);
 
                 match op {
-                    Op::CLS => self.do_cls(),
-                    Op::JP(addr) => self.do_jp(addr),
+                    Op::ADD(reg, val) => self.do_add(reg, val),
+                    Op::ADDI(reg) => self.do_addi(reg),
                     Op::CALL(addr) => self.do_call(addr),
-                    Op::LD(reg, val) => self.do_ld(reg, val),
-                    Op::LDI(addr) => self.do_ldi(addr),
-                    Op::LDIS(reg) => self.do_ldis(reg),
-                    Op::LDIB(reg) => self.do_ldib(reg),
-                    Op::LDIR(reg) => self.do_ldir(reg),
-                    Op::LDIM(reg) => self.do_ldim(reg),
+                    Op::CLS => self.do_cls(),
+                    Op::CPDT(reg) => self.do_cpdt(reg),
                     Op::DRW(reg1, reg2, val) => self.do_drw(reg1, reg2, val),
+                    Op::JP(addr) => self.do_jp(addr),
+                    Op::LD(reg, val) => self.do_ld(reg, val),
+                    Op::LDDT(reg) => self.do_lddt(reg),
+                    Op::LDI(addr) => self.do_ldi(addr),
+                    Op::LDIB(reg) => self.do_ldib(reg),
+                    Op::LDIM(reg) => self.do_ldim(reg),
+                    Op::LDIR(reg) => self.do_ldir(reg),
+                    Op::LDIS(reg) => self.do_ldis(reg),
+                    Op::LDR(reg1, reg2) => self.do_ldr(reg1, reg2),
+                    Op::LDST(reg) => self.do_ldst(reg),
+                    Op::RET => self.do_ret(),
+                    Op::RND(reg, val) => self.do_rnd(reg, val),
+                    Op::SE(reg, val) => self.do_se(reg, val),
+                    Op::SKNP(reg) => self.do_sknp(reg),
+                    Op::SKP(reg) => self.do_skp(reg),
+                    Op::SNE(reg, val) => self.do_sne(reg, val),
                     _ => unreachable!(),
                 }
             }
@@ -152,9 +183,18 @@ impl Emulator {
         self.input = Some(input);
     }
 
-    fn do_cls(&mut self) -> StepResult {
-        self.screen.clear();
-        Ok(Some(Step::Draw(self.screen.pixels())))
+    fn do_add(&mut self, reg: Register, val: Value) -> StepResult {
+        let Register(r) = reg;
+        let a = self.vx[r as usize] as u16;
+        let b = val.0 as u16;
+        self.vx[r as usize] = (a + b) as u8;
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_addi(&mut self, reg: Register) -> StepResult {
+        self.i += self.vx[reg] as u16;
+
+        Ok(Some(Step::Nop))
     }
 
     fn do_call(&mut self, addr: Address) -> StepResult {
@@ -163,14 +203,40 @@ impl Emulator {
         Ok(Some(Step::Nop))
     }
 
+    fn do_cls(&mut self) -> StepResult {
+        self.screen.clear();
+        Ok(Some(Step::Draw(self.screen.pixels())))
+    }
+
+    fn do_cpdt(&mut self, reg: Register) -> StepResult {
+        self.vx[reg] = self.dt;
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_drw(&mut self, reg1: Register, reg2: Register, n: Value) -> StepResult {
+        let x = self.vx[reg1];
+        let y = self.vx[reg2];
+        let sprite_data = self.memory[self.i as usize..(self.i + n.0 as u16) as usize].to_vec();
+
+        if let Some(v) = self.screen.draw(display::Sprite::new(x, y, sprite_data)) {
+            self.vx[0xF] = v;
+        }
+
+        Ok(Some(Step::Draw(self.screen.pixels())))
+    }
+
     fn do_jp(&mut self, addr: Address) -> StepResult {
         self.pc = addr.into();
         Ok(Some(Step::Nop))
     }
 
     fn do_ld(&mut self, reg: Register, val: Value) -> StepResult {
-        let x: usize = reg.into();
-        self.vx[x] = val.0;
+        self.vx[reg] = val.into();
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_lddt(&mut self, reg: Register) -> StepResult {
+        self.dt = self.vx[reg];
         Ok(Some(Step::Nop))
     }
 
@@ -179,27 +245,12 @@ impl Emulator {
         Ok(Some(Step::Nop))
     }
 
-    fn do_ldis(&mut self, reg: Register) -> StepResult {
-        let digit = self.get_register(reg);
-        self.i = (digit * 4) as u16;
-        Ok(Some(Step::Nop))
-    }
-
     fn do_ldib(&mut self, reg: Register) -> StepResult {
-        let val = self.get_register(reg);
+        let val = self.vx[reg];
         let bcd = to_bcd(val);
 
         for j in 0usize..3usize {
             self.memory[self.i as usize + j] = bcd[j]
-        }
-
-        Ok(Some(Step::Nop))
-    }
-
-    fn do_ldir(&mut self, reg: Register) -> StepResult {
-        let Register(x) = reg;
-        for r in 0..=x {
-            self.memory[self.i as usize + r as usize] = self.vx[r as usize];
         }
 
         Ok(Some(Step::Nop))
@@ -214,16 +265,79 @@ impl Emulator {
         Ok(Some(Step::Nop))
     }
 
-    fn do_drw(&mut self, reg1: Register, reg2: Register, n: Value) -> StepResult {
-        let x = self.get_register(reg1);
-        let y = self.get_register(reg2);
-        let sprite_data = self.memory[self.i as usize..(self.i + n.0 as u16) as usize].to_vec();
-
-        if let Some(v) = self.screen.draw(display::Sprite::new(x, y, sprite_data)) {
-            self.vx[0xF] = v;
+    fn do_ldir(&mut self, reg: Register) -> StepResult {
+        let Register(x) = reg;
+        for r in 0..=x {
+            self.memory[self.i as usize + r as usize] = self.vx[r as usize];
         }
 
-        Ok(Some(Step::Draw(self.screen.pixels())))
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_ldis(&mut self, reg: Register) -> StepResult {
+        let digit = self.vx[reg];
+        self.i = (digit * 4) as u16;
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_ldr(&mut self, reg1: Register, reg2: Register) -> StepResult {
+        self.vx[reg1] = self.vx[reg2];
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_ldst(&mut self, reg: Register) -> StepResult {
+        self.st = self.vx[reg];
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_ret(&mut self) -> StepResult {
+        let addr = self.pop_from_stack()?;
+        self.pc = addr;
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_rnd(&mut self, reg: Register, val: Value) -> StepResult {
+        let mut rng = rand::thread_rng();
+        let r = rng.gen_range(std::u8::MIN, std::u8::MAX);
+        self.vx[reg] = r & val.0;
+
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_se(&mut self, reg: Register, val: Value) -> StepResult {
+        if self.vx[reg] == val.into() {
+            self.pc += 2;
+        }
+
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_sknp(&mut self, reg: Register) -> StepResult {
+        if let Some(k) = self.input {
+            if k as u8 != self.vx[reg] {
+                self.pc += 2;
+            }
+        }
+
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_skp(&mut self, reg: Register) -> StepResult {
+        if let Some(k) = self.input {
+            if k as u8 == self.vx[reg] {
+                self.pc += 2;
+            }
+        }
+
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_sne(&mut self, reg: Register, val: Value) -> StepResult {
+        if self.vx[reg] != val.into() {
+            self.pc += 2;
+        }
+
+        Ok(Some(Step::Nop))
     }
 
     fn push_to_stack(&mut self, val: usize) -> Result<()> {
@@ -243,10 +357,5 @@ impl Emulator {
 
         self.sp -= 1;
         Ok(self.stack[self.sp as usize])
-    }
-
-    fn get_register(&self, reg: Register) -> u8 {
-        let Register(x) = reg;
-        self.vx[x as usize]
     }
 }

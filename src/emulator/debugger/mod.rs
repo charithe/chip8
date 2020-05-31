@@ -3,8 +3,10 @@ use crate::emulator::common::{Error, Result};
 use crossbeam_channel;
 use std::time::Duration;
 
+const CLOCK_SPEED_HZ: u32 = 60;
+
 pub fn start(emu: &mut emulator::Emulator) -> Result<()> {
-    let ticker = crossbeam_channel::tick(Duration::from_millis(2));
+    let ticker = crossbeam_channel::tick(Duration::from_secs(1) / CLOCK_SPEED_HZ);
     for _tick in ticker.iter() {
         match emu.step() {
             Ok(Some(emulator::Step::Draw(pixels))) => draw(pixels),

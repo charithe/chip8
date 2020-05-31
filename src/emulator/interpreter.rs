@@ -19,14 +19,28 @@ impl From<Address> for u16 {
 #[derive(Debug, PartialEq)]
 pub struct Register(pub u8);
 
-impl From<Register> for usize {
-    fn from(reg: Register) -> Self {
-        reg.0 as usize
+impl std::ops::Index<Register> for [u8] {
+    type Output = u8;
+
+    fn index(&self, reg: Register) -> &Self::Output {
+        &self[reg.0 as usize]
+    }
+}
+
+impl std::ops::IndexMut<Register> for [u8] {
+    fn index_mut(&mut self, reg: Register) -> &mut Self::Output {
+        &mut self[reg.0 as usize]
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Value(pub u8);
+
+impl From<Value> for u8 {
+    fn from(val: Value) -> Self {
+        val.0
+    }
+}
 
 #[derive(Debug, PartialEq)]
 pub enum Op {
