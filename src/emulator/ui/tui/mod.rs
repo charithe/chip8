@@ -11,7 +11,7 @@ use termion::{
 };
 use tui::{
     backend::TermionBackend,
-    layout::{Alignment, Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     widgets::{Block, Borders, Paragraph, Text},
     Terminal,
@@ -23,15 +23,17 @@ use crossbeam_channel;
 
 mod widgets;
 
+const CLOCK_SPEED_HZ: u32 = 100;
+
 enum Command {
     Draw(display::Pixels),
     Quit,
 }
 
 pub fn start_loop(emu: &mut emulator::Emulator) -> Result<()> {
-    let (cmd_tx, cmd_rx) = crossbeam_channel::bounded(0);
-    let (input_tx, input_rx) = crossbeam_channel::bounded(0);
-    let ticker = crossbeam_channel::tick(Duration::from_millis(2));
+    let (cmd_tx, cmd_rx) = crossbeam_channel::bounded(8);
+    let (input_tx, input_rx) = crossbeam_channel::bounded(8);
+    let ticker = crossbeam_channel::tick(Duration::from_secs(1) / CLOCK_SPEED_HZ);
 
     start_render_loop(cmd_rx)?;
     start_input_loop(input_tx);
@@ -71,23 +73,23 @@ fn start_input_loop(
         for evt in stdin.keys() {
             if let Ok(key) = evt {
                 let input = match key {
-                    Key::Char('7') => Some(Input::Key1),
-                    Key::Char('8') => Some(Input::Key2),
-                    Key::Char('9') => Some(Input::Key3),
-                    Key::Char('0') => Some(Input::KeyC),
-                    Key::Char('u') => Some(Input::Key4),
-                    Key::Char('i') => Some(Input::Key5),
-                    Key::Char('o') => Some(Input::Key6),
-                    Key::Char('p') => Some(Input::KeyD),
-                    Key::Char('j') => Some(Input::Key7),
-                    Key::Char('k') => Some(Input::Key8),
-                    Key::Char('l') => Some(Input::Key9),
-                    Key::Char(';') => Some(Input::KeyE),
-                    Key::Char('m') => Some(Input::KeyA),
-                    Key::Char(',') => Some(Input::Key0),
-                    Key::Char('.') => Some(Input::KeyB),
-                    Key::Char('/') => Some(Input::KeyF),
-                    Key::Char('q') => Some(Input::Quit),
+                    Key::Char('1') => Some(Input::Key1),
+                    Key::Char('2') => Some(Input::Key2),
+                    Key::Char('3') => Some(Input::Key3),
+                    Key::Char('4') => Some(Input::KeyC),
+                    Key::Char('q') => Some(Input::Key4),
+                    Key::Char('w') => Some(Input::Key5),
+                    Key::Char('e') => Some(Input::Key6),
+                    Key::Char('r') => Some(Input::KeyD),
+                    Key::Char('a') => Some(Input::Key7),
+                    Key::Char('s') => Some(Input::Key8),
+                    Key::Char('d') => Some(Input::Key9),
+                    Key::Char('f') => Some(Input::KeyE),
+                    Key::Char('z') => Some(Input::KeyA),
+                    Key::Char('x') => Some(Input::Key0),
+                    Key::Char('c') => Some(Input::KeyB),
+                    Key::Char('v') => Some(Input::KeyF),
+                    Key::Esc => Some(Input::Quit),
                     _ => None,
                 };
 
@@ -118,32 +120,35 @@ fn start_render_loop(
     terminal.hide_cursor()?;
 
     debug!("Starting render loop");
-    Ok(thread::spawn(move || loop {
-        let mut scr = widgets::Screen::default().block(Block::default().borders(Borders::ALL));
-        match cmd_rx.try_recv() {
-            Ok(Command::Quit) => return,
-            Ok(Command::Draw(p)) => scr = scr.pixels(p),
-            _ => {}
-        };
+    Ok(thread::spawn(move || {
+        let mut pixels: Option<display::Pixels> = None;
+        loop {
+            match cmd_rx.try_recv() {
+                Ok(Command::Quit) => return,
+                Ok(Command::Draw(p)) => pixels = Some(p),
+                _ => {}
+            };
 
-        terminal
-            .draw(|mut f| {
-                let chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Percentage(85), Constraint::Percentage(15)].as_ref())
-                    .split(f.size());
+            let scr = if let Some(ref p) = pixels {
+                widgets::Screen::default()
+                    .block(Block::default().borders(Borders::ALL))
+                    .pixels(&p)
+            } else {
+                widgets::Screen::default().block(Block::default().borders(Borders::ALL))
+            };
 
-                f.render_widget(scr, chunks[0]);
-
-                let text = [Text::styled("Second line", Style::default().fg(Color::Red))];
-                let paragraph = Paragraph::new(text.iter())
-                    .block(Block::default().title("Instruction").borders(Borders::ALL))
-                    .style(Style::default().fg(Color::White).bg(Color::Black))
-                    .alignment(Alignment::Center)
-                    .wrap(true);
-
-                f.render_widget(paragraph, chunks[1]);
-            })
-            .unwrap();
+            terminal
+                .draw(|mut f| {
+                    let size = f.size();
+                    //let area = Rect::new(
+                    //    (size.width / 2) - (display::WIDTH as u16 / 2),
+                    //    (size.height / 2) - (display::HEIGHT as u16 / 2),
+                    //    display::WIDTH as u16,
+                    //    display::HEIGHT as u16,
+                    //);
+                    f.render_widget(scr, size);
+                })
+                .unwrap();
+        }
     }))
 }

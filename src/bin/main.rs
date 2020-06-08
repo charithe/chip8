@@ -20,6 +20,6 @@ fn start_emu(rom: String) -> emulator::Result<()> {
     let buffered = io::BufReader::new(input);
     let mut emu = emulator::Emulator::new(buffered)?;
 
-    //emulator::ui::tui::start_loop(&mut emu)
-    emulator::debugger::start(&mut emu)
+    emulator::ui::tui::start_loop(&mut emu)
+    //emulator::debugger::start(&mut emu)
 }

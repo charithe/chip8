@@ -152,11 +152,14 @@ impl Emulator {
                 match op {
                     Op::ADD(reg, val) => self.do_add(reg, val),
                     Op::ADDI(reg) => self.do_addi(reg),
+                    Op::ADDR(reg1, reg2) => self.do_addr(reg1, reg2),
+                    Op::AND(reg1, reg2) => self.do_and(reg1, reg2),
                     Op::CALL(addr) => self.do_call(addr),
                     Op::CLS => self.do_cls(),
                     Op::CPDT(reg) => self.do_cpdt(reg),
                     Op::DRW(reg1, reg2, val) => self.do_drw(reg1, reg2, val),
                     Op::JP(addr) => self.do_jp(addr),
+                    Op::JPREL(addr) => self.do_jprel(addr),
                     Op::LD(reg, val) => self.do_ld(reg, val),
                     Op::LDDT(reg) => self.do_lddt(reg),
                     Op::LDI(addr) => self.do_ldi(addr),
@@ -164,14 +167,24 @@ impl Emulator {
                     Op::LDIM(reg) => self.do_ldim(reg),
                     Op::LDIR(reg) => self.do_ldir(reg),
                     Op::LDIS(reg) => self.do_ldis(reg),
+                    Op::LDKP(reg) => self.do_ldkp(reg),
                     Op::LDR(reg1, reg2) => self.do_ldr(reg1, reg2),
                     Op::LDST(reg) => self.do_ldst(reg),
+                    Op::OR(reg1, reg2) => self.do_or(reg1, reg2),
                     Op::RET => self.do_ret(),
                     Op::RND(reg, val) => self.do_rnd(reg, val),
                     Op::SE(reg, val) => self.do_se(reg, val),
+                    Op::SER(reg1, reg2) => self.do_ser(reg1, reg2),
+                    Op::SHL(reg) => self.do_shl(reg),
+                    Op::SHR(reg) => self.do_shr(reg),
                     Op::SKNP(reg) => self.do_sknp(reg),
                     Op::SKP(reg) => self.do_skp(reg),
                     Op::SNE(reg, val) => self.do_sne(reg, val),
+                    Op::SNER(reg1, reg2) => self.do_sner(reg1, reg2),
+                    Op::SUB(reg1, reg2) => self.do_sub(reg1, reg2),
+                    Op::SUBN(reg1, reg2) => self.do_subn(reg1, reg2),
+                    Op::SYS(addr) => self.do_sys(addr),
+                    Op::XOR(reg1, reg2) => self.do_xor(reg1, reg2),
                     _ => unreachable!(),
                 }
             }
@@ -194,6 +207,25 @@ impl Emulator {
     fn do_addi(&mut self, reg: Register) -> StepResult {
         self.i += self.vx[reg] as u16;
 
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_addr(&mut self, reg1: Register, reg2: Register) -> StepResult {
+        let a = self.vx[reg1];
+        let b = self.vx[reg2];
+
+        if let Some(sum) = a.checked_add(b) {
+            self.vx[reg1] = sum;
+        } else {
+            self.vx[reg1] = a.saturating_add(b);
+            self.vx[0xF] = 1;
+        }
+
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_and(&mut self, reg1: Register, reg2: Register) -> StepResult {
+        self.vx[reg1] &= self.vx[reg2];
         Ok(Some(Step::Nop))
     }
 
@@ -227,6 +259,12 @@ impl Emulator {
 
     fn do_jp(&mut self, addr: Address) -> StepResult {
         self.pc = addr.into();
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_jprel(&mut self, addr: Address) -> StepResult {
+        self.pc = addr.into();
+        self.pc += self.vx[0x0] as usize;
         Ok(Some(Step::Nop))
     }
 
@@ -280,6 +318,18 @@ impl Emulator {
         Ok(Some(Step::Nop))
     }
 
+    fn do_ldkp(&mut self, reg: Register) -> StepResult {
+        while self.input.is_none() {
+            thread::sleep_ms(2);
+        }
+
+        if let Some(key) = self.input {
+            self.vx[reg] = key as u8;
+        }
+
+        Ok(Some(Step::Nop))
+    }
+
     fn do_ldr(&mut self, reg1: Register, reg2: Register) -> StepResult {
         self.vx[reg1] = self.vx[reg2];
         Ok(Some(Step::Nop))
@@ -287,6 +337,11 @@ impl Emulator {
 
     fn do_ldst(&mut self, reg: Register) -> StepResult {
         self.st = self.vx[reg];
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_or(&mut self, reg1: Register, reg2: Register) -> StepResult {
+        self.vx[reg1] |= self.vx[reg2];
         Ok(Some(Step::Nop))
     }
 
@@ -309,6 +364,31 @@ impl Emulator {
             self.pc += 2;
         }
 
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_ser(&mut self, reg1: Register, reg2: Register) -> StepResult {
+        if self.vx[reg1] == self.vx[reg2] {
+            self.pc += 2;
+        }
+
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_shl(&mut self, reg: Register) -> StepResult {
+        if self.vx[reg] & 0x80 == 0 {
+            self.vx[0xF] = 0;
+        } else {
+            self.vx[0xF] = 1;
+        }
+
+        self.vx[reg] = self.vx[reg] << 1;
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_shr(&mut self, reg: Register) -> StepResult {
+        self.vx[0xF] = self.vx[reg] & 0x01;
+        self.vx[reg] = self.vx[reg] >> 1;
         Ok(Some(Step::Nop))
     }
 
@@ -337,6 +417,46 @@ impl Emulator {
             self.pc += 2;
         }
 
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_sner(&mut self, reg1: Register, reg2: Register) -> StepResult {
+        if self.vx[reg1] != self.vx[reg2] {
+            self.pc += 2;
+        }
+
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_sub(&mut self, reg1: Register, reg2: Register) -> StepResult {
+        if self.vx[reg1] > self.vx[reg2] {
+            self.vx[0xF] = 1;
+        } else {
+            self.vx[0xF] = 0;
+        }
+
+        self.vx[reg1] = self.vx[reg1].saturating_sub(self.vx[reg2]);
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_subn(&mut self, reg1: Register, reg2: Register) -> StepResult {
+        if self.vx[reg2] > self.vx[reg1] {
+            self.vx[0xF] = 1;
+        } else {
+            self.vx[0xF] = 0;
+        }
+
+        self.vx[reg1] = self.vx[reg2].saturating_sub(self.vx[reg1]);
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_sys(&mut self, addr: Address) -> StepResult {
+        // ignored
+        Ok(Some(Step::Nop))
+    }
+
+    fn do_xor(&mut self, reg1: Register, reg2: Register) -> StepResult {
+        self.vx[reg1] ^= self.vx[reg2];
         Ok(Some(Step::Nop))
     }
 

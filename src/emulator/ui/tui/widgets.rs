@@ -11,7 +11,7 @@ use tui::{
 
 pub struct Screen<'a> {
     block: Option<Block<'a>>,
-    pixels: Option<Pixels>,
+    pixels: Option<&'a Pixels>,
 }
 
 impl<'a> Default for Screen<'a> {
@@ -29,7 +29,7 @@ impl<'a> Screen<'a> {
         self
     }
 
-    pub fn pixels(mut self, pixels: Pixels) -> Screen<'a> {
+    pub fn pixels(mut self, pixels: &'a Pixels) -> Screen<'a> {
         self.pixels = Some(pixels);
         self
     }

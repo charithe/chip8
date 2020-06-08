@@ -1,7 +1,7 @@
 use super::common::{Error, Result};
 use std::fmt;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub struct Address(pub u16);
 
 impl From<Address> for usize {
@@ -16,7 +16,7 @@ impl From<Address> for u16 {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub struct Register(pub u8);
 
 impl std::ops::Index<Register> for [u8] {
@@ -33,7 +33,7 @@ impl std::ops::IndexMut<Register> for [u8] {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub struct Value(pub u8);
 
 impl From<Value> for u8 {
@@ -44,41 +44,41 @@ impl From<Value> for u8 {
 
 #[derive(Debug, PartialEq)]
 pub enum Op {
-    SYS(Address),
-    CLS,
-    RET,
-    JP(Address),
-    CALL(Address),
-    SE(Register, Value),
-    SNE(Register, Value),
-    SER(Register, Register),
-    LD(Register, Value),
     ADD(Register, Value),
-    LDR(Register, Register),
-    OR(Register, Register),
-    AND(Register, Register),
-    XOR(Register, Register),
-    ADDR(Register, Register),
-    SUB(Register, Register),
-    SHR(Register),
-    SUBN(Register, Register),
-    SHL(Register),
-    SNER(Register, Register),
-    LDI(Address),
-    JPREL(Address),
-    RND(Register, Value),
-    DRW(Register, Register, Value),
-    SKP(Register),
-    SKNP(Register),
-    CPDT(Register),
-    LDKP(Register),
-    LDDT(Register),
-    LDST(Register),
     ADDI(Register),
-    LDIS(Register),
+    ADDR(Register, Register),
+    AND(Register, Register),
+    CALL(Address),
+    CLS,
+    CPDT(Register),
+    DRW(Register, Register, Value),
+    JP(Address),
+    JPREL(Address),
+    LD(Register, Value),
+    LDDT(Register),
+    LDI(Address),
     LDIB(Register),
-    LDIR(Register),
     LDIM(Register),
+    LDIR(Register),
+    LDIS(Register),
+    LDKP(Register),
+    LDR(Register, Register),
+    LDST(Register),
+    OR(Register, Register),
+    RET,
+    RND(Register, Value),
+    SE(Register, Value),
+    SER(Register, Register),
+    SHL(Register),
+    SHR(Register),
+    SKNP(Register),
+    SKP(Register),
+    SNE(Register, Value),
+    SNER(Register, Register),
+    SUB(Register, Register),
+    SUBN(Register, Register),
+    SYS(Address),
+    XOR(Register, Register),
 }
 
 impl fmt::Display for Op {
