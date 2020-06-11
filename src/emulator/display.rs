@@ -8,6 +8,7 @@ const TOTAL_PIXELS: usize = 64 * 32;
 
 pub type Pixels = Vec<Pixel>;
 
+#[derive(Debug, Clone)]
 pub struct Pixel {
     pub x: u8,
     pub y: u8,

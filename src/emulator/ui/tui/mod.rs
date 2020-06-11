@@ -3,17 +3,11 @@ use crate::emulator::common::{Error, Result};
 use crate::emulator::{display, Input};
 use log::{debug, error};
 use std::{io, thread, time::Duration};
-use termion::{
-    event::Key,
-    input::{MouseTerminal, TermRead},
-    raw::IntoRawMode,
-    screen::AlternateScreen,
-};
+use termion::{event::Key, input::TermRead, raw::IntoRawMode, screen::AlternateScreen};
 use tui::{
     backend::TermionBackend,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
-    widgets::{Block, Borders, Paragraph, Text},
+    layout::Rect,
+    widgets::{Block, Borders},
     Terminal,
 };
 
@@ -23,20 +17,21 @@ use crossbeam_channel;
 
 mod widgets;
 
-const CLOCK_SPEED_HZ: u32 = 100;
-
-enum Command {
-    Draw(display::Pixels),
-    Quit,
-}
+const CLOCK_SPEED_HZ: u32 = 60;
 
 pub fn start_loop(emu: &mut emulator::Emulator) -> Result<()> {
-    let (cmd_tx, cmd_rx) = crossbeam_channel::bounded(8);
     let (input_tx, input_rx) = crossbeam_channel::bounded(8);
     let ticker = crossbeam_channel::tick(Duration::from_secs(1) / CLOCK_SPEED_HZ);
 
-    start_render_loop(cmd_rx)?;
     start_input_loop(input_tx);
+
+    let stdout = io::stdout().into_raw_mode()?;
+    let stdout = AlternateScreen::from(stdout);
+    let backend = TermionBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+    terminal.hide_cursor()?;
+
+    let mut pixels: Option<display::Pixels> = None;
 
     loop {
         select! {
@@ -48,20 +43,46 @@ pub fn start_loop(emu: &mut emulator::Emulator) -> Result<()> {
                 }
             },
             recv(ticker) -> _tick => {
-                match emu.step() {
-                    Ok(Some(emulator::Step::Draw(pixels))) => {
-                        match cmd_tx.try_send(Command::Draw(pixels)) {
-                            Ok(_) => {},
-                            Err(crossbeam_channel::TrySendError::Full(_)) => {},
-                            Err(err) => return Err(Error::Unexpected(Box::new(err))),
-                        }
-                    },
+                let step = emu.step();
+                match step {
+                    Ok(Some(emulator::Step::Exit)) =>  {return Ok(()); },
+                    Ok(Some(emulator::Step::Draw(p))) =>  {pixels = Some(p.to_vec());},
                     Ok(_) => {},
-                    Err(err) => return Err(err),
-                }
+                    Err(err) => {return Err(err);},
+                };
+
+                draw_screen(&mut terminal, &pixels);
             },
         }
     }
+}
+
+fn draw_screen<B: tui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    pixels: &Option<display::Pixels>,
+) {
+    let scr = if let Some(ref p) = pixels {
+        widgets::Screen::default()
+            .block(Block::default().borders(Borders::ALL))
+            .pixels(&p)
+    } else {
+        widgets::Screen::default().block(Block::default().borders(Borders::ALL))
+    };
+
+    terminal
+        .draw(|mut f| {
+            let size = f.size();
+            let padded_width = display::WIDTH as u16 + 5;
+            let padded_height = display::HEIGHT as u16 + 5;
+            let area = Rect::new(
+                (size.width / 2) - (padded_width / 2),
+                (size.height / 2) - (padded_height / 2),
+                padded_width,
+                padded_height,
+            );
+            f.render_widget(scr, area);
+        })
+        .unwrap();
 }
 
 fn start_input_loop(
@@ -107,48 +128,4 @@ fn start_input_loop(
             }
         }
     })
-}
-
-fn start_render_loop(
-    cmd_rx: crossbeam_channel::Receiver<Command>,
-) -> Result<thread::JoinHandle<()>> {
-    let stdout = io::stdout().into_raw_mode()?;
-    let stdout = MouseTerminal::from(stdout);
-    let stdout = AlternateScreen::from(stdout);
-    let backend = TermionBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-    terminal.hide_cursor()?;
-
-    debug!("Starting render loop");
-    Ok(thread::spawn(move || {
-        let mut pixels: Option<display::Pixels> = None;
-        loop {
-            match cmd_rx.try_recv() {
-                Ok(Command::Quit) => return,
-                Ok(Command::Draw(p)) => pixels = Some(p),
-                _ => {}
-            };
-
-            let scr = if let Some(ref p) = pixels {
-                widgets::Screen::default()
-                    .block(Block::default().borders(Borders::ALL))
-                    .pixels(&p)
-            } else {
-                widgets::Screen::default().block(Block::default().borders(Borders::ALL))
-            };
-
-            terminal
-                .draw(|mut f| {
-                    let size = f.size();
-                    //let area = Rect::new(
-                    //    (size.width / 2) - (display::WIDTH as u16 / 2),
-                    //    (size.height / 2) - (display::HEIGHT as u16 / 2),
-                    //    display::WIDTH as u16,
-                    //    display::HEIGHT as u16,
-                    //);
-                    f.render_widget(scr, size);
-                })
-                .unwrap();
-        }
-    }))
 }

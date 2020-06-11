@@ -6,7 +6,10 @@ use tui::{
     layout::Rect,
     style::Color,
     symbols,
-    widgets::{Block, Widget},
+    widgets::{
+        canvas::{Painter, Shape},
+        Block, Widget,
+    },
 };
 
 pub struct Screen<'a> {
@@ -45,10 +48,7 @@ impl<'a> Widget for Screen<'a> {
             None => area,
         };
 
-        if screen_area.width < display::WIDTH as u16 || screen_area.height < display::HEIGHT as u16
-        {
-            return;
-        }
+        buf.set_background(screen_area, Color::Green);
 
         if let Some(pixels) = self.pixels {
             pixels.iter().for_each(|p| {
@@ -57,7 +57,21 @@ impl<'a> Widget for Screen<'a> {
                     screen_area.top() + p.y as u16,
                 )
                 .set_symbol(symbols::block::FULL)
-                .set_fg(Color::Yellow);
+                .set_fg(Color::Black);
+            });
+        }
+    }
+}
+
+impl<'a> Shape for Screen<'a> {
+    fn draw(&self, painter: &mut Painter) {
+        if let Some(pixels) = self.pixels {
+            pixels.iter().for_each(|p| {
+                if let Some((x, y)) =
+                    painter.get_point(p.x as f64, display::HEIGHT as f64 - p.y as f64)
+                {
+                    painter.paint(x, y, Color::Red);
+                }
             });
         }
     }

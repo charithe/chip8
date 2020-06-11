@@ -40,8 +40,8 @@ pub type StepResult = Result<Option<Step>>;
 
 pub enum Step {
     Nop,
-    ReadKey,
     Draw(display::Pixels),
+    Exit,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -76,6 +76,7 @@ pub struct Emulator {
     stack: [usize; STACK_SIZE],
     screen: display::Screen,
     input: Option<Input>,
+    rom_end: usize,
 }
 
 impl Emulator {
@@ -91,6 +92,7 @@ impl Emulator {
             stack: [0; STACK_SIZE],
             screen: display::Screen::default(),
             input: None,
+            rom_end: 0,
         };
 
         emu.memory[..80].copy_from_slice(&FONT_SET[..]);
@@ -113,6 +115,8 @@ impl Emulator {
             }
         }
 
+        self.rom_end = i + MEM_START;
+
         Ok(())
     }
 
@@ -120,10 +124,12 @@ impl Emulator {
         for i in MEM_START..MEM_SIZE {
             self.memory[i] = 0u8;
         }
+
+        self.rom_end = MEM_START;
     }
 
     fn next_instruction(&mut self) -> Option<Instruction> {
-        if (self.pc < MEM_START) || (self.pc >= MEM_SIZE - 2) {
+        if (self.pc < MEM_START) || (self.pc >= self.rom_end) {
             return None;
         }
 
@@ -185,10 +191,9 @@ impl Emulator {
                     Op::SUBN(reg1, reg2) => self.do_subn(reg1, reg2),
                     Op::SYS(addr) => self.do_sys(addr),
                     Op::XOR(reg1, reg2) => self.do_xor(reg1, reg2),
-                    _ => unreachable!(),
                 }
             }
-            _ => Ok(None),
+            None => Ok(Some(Step::Exit)),
         }
     }
 
@@ -320,7 +325,7 @@ impl Emulator {
 
     fn do_ldkp(&mut self, reg: Register) -> StepResult {
         while self.input.is_none() {
-            thread::sleep_ms(2);
+            thread::sleep(Duration::from_millis(10));
         }
 
         if let Some(key) = self.input {
