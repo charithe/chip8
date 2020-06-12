@@ -50,11 +50,14 @@ impl<'a> Widget for Screen<'a> {
 
         buf.set_background(screen_area, Color::Green);
 
+        let left_padding = (screen_area.width - display::WIDTH as u16) / 2;
+        let top_padding = (screen_area.height - display::HEIGHT as u16) / 2;
+
         if let Some(pixels) = self.pixels {
             pixels.iter().for_each(|p| {
                 buf.get_mut(
-                    screen_area.left() + p.x as u16,
-                    screen_area.top() + p.y as u16,
+                    screen_area.left() + left_padding + p.x as u16,
+                    screen_area.top() + top_padding + p.y as u16,
                 )
                 .set_symbol(symbols::block::FULL)
                 .set_fg(Color::Black);

@@ -11,16 +11,15 @@ use tui::{
     Terminal,
 };
 
-#[macro_use]
-use crossbeam_channel::select;
 use crossbeam_channel;
+use crossbeam_channel::select;
 
 mod widgets;
 
 const CLOCK_SPEED_HZ: u32 = 60;
 
 pub fn start_loop(emu: &mut emulator::Emulator) -> Result<()> {
-    let (input_tx, input_rx) = crossbeam_channel::bounded(8);
+    let (input_tx, input_rx) = crossbeam_channel::bounded(1);
     let ticker = crossbeam_channel::tick(Duration::from_secs(1) / CLOCK_SPEED_HZ);
 
     start_input_loop(input_tx);
@@ -45,10 +44,16 @@ pub fn start_loop(emu: &mut emulator::Emulator) -> Result<()> {
             recv(ticker) -> _tick => {
                 let step = emu.step();
                 match step {
-                    Ok(Some(emulator::Step::Exit)) =>  {return Ok(()); },
-                    Ok(Some(emulator::Step::Draw(p))) =>  {pixels = Some(p.to_vec());},
+                    Ok(Some(emulator::Step::Exit)) =>  {
+                        return Ok(());
+                    },
+                    Ok(Some(emulator::Step::Draw(p))) =>  {
+                        pixels = Some(p.to_vec());
+                    },
                     Ok(_) => {},
-                    Err(err) => {return Err(err);},
+                    Err(err) => {
+                        return Err(err);
+                    },
                 };
 
                 draw_screen(&mut terminal, &pixels);
@@ -72,8 +77,8 @@ fn draw_screen<B: tui::backend::Backend>(
     terminal
         .draw(|mut f| {
             let size = f.size();
-            let padded_width = display::WIDTH as u16 + 5;
-            let padded_height = display::HEIGHT as u16 + 5;
+            let padded_width = display::WIDTH as u16 + 10;
+            let padded_height = display::HEIGHT as u16 + 10;
             let area = Rect::new(
                 (size.width / 2) - (padded_width / 2),
                 (size.height / 2) - (padded_height / 2),

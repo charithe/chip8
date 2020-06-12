@@ -1,5 +1,4 @@
 use chip8::emulator;
-use log::info;
 use pretty_env_logger;
 use std::env;
 use std::fs::File;

@@ -145,7 +145,6 @@ impl fmt::Display for Op {
             Op::LDIB(Register(reg)) => f.write_fmt(format_args!("LDIB $V{}", reg)),
             Op::LDIR(Register(reg)) => f.write_fmt(format_args!("LDIR $V{}", reg)),
             Op::LDIM(Register(reg)) => f.write_fmt(format_args!("LDIM $V{}", reg)),
-            _ => f.write_str("UNKNOWN"),
         }
     }
 }

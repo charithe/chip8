@@ -1,16 +1,9 @@
-#![feature(no_more_cas)]
 use super::common::{Error, Result};
 use super::display;
 use super::interpreter::*;
 use log::debug;
-use std::sync::{
-    atomic::{AtomicU8, Ordering},
-    Arc,
-};
-use std::{io::Read, thread, time::Duration};
-#[macro_use]
-use crossbeam_channel::select;
 use rand::Rng;
+use std::io::Read;
 
 const REG_COUNT: usize = 16;
 const MEM_SIZE: usize = 4096;
@@ -41,6 +34,7 @@ pub type StepResult = Result<Option<Step>>;
 pub enum Step {
     Nop,
     Draw(display::Pixels),
+    WaitForKey,
     Exit,
 }
 
@@ -201,6 +195,12 @@ impl Emulator {
         self.input = Some(input);
     }
 
+    fn get_input(&mut self) -> Option<Input> {
+        let input = self.input;
+        self.input = None;
+        input
+    }
+
     fn do_add(&mut self, reg: Register, val: Value) -> StepResult {
         let Register(r) = reg;
         let a = self.vx[r as usize] as u16;
@@ -324,15 +324,13 @@ impl Emulator {
     }
 
     fn do_ldkp(&mut self, reg: Register) -> StepResult {
-        while self.input.is_none() {
-            thread::sleep(Duration::from_millis(10));
-        }
-
-        if let Some(key) = self.input {
+        if let Some(key) = self.get_input() {
             self.vx[reg] = key as u8;
+            Ok(Some(Step::Nop))
+        } else {
+            self.pc -= 2;
+            Ok(Some(Step::WaitForKey))
         }
-
-        Ok(Some(Step::Nop))
     }
 
     fn do_ldr(&mut self, reg1: Register, reg2: Register) -> StepResult {
@@ -398,7 +396,7 @@ impl Emulator {
     }
 
     fn do_sknp(&mut self, reg: Register) -> StepResult {
-        if let Some(k) = self.input {
+        if let Some(k) = self.get_input() {
             if k as u8 != self.vx[reg] {
                 self.pc += 2;
             }
@@ -408,7 +406,7 @@ impl Emulator {
     }
 
     fn do_skp(&mut self, reg: Register) -> StepResult {
-        if let Some(k) = self.input {
+        if let Some(k) = self.get_input() {
             if k as u8 == self.vx[reg] {
                 self.pc += 2;
             }
@@ -455,7 +453,7 @@ impl Emulator {
         Ok(Some(Step::Nop))
     }
 
-    fn do_sys(&mut self, addr: Address) -> StepResult {
+    fn do_sys(&mut self, _addr: Address) -> StepResult {
         // ignored
         Ok(Some(Step::Nop))
     }
