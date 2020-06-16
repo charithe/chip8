@@ -192,6 +192,7 @@ impl Emulator {
     }
 
     pub fn send_input(&mut self, input: Input) {
+        debug!("Input:\t{:?}", input);
         self.input = Some(input);
     }
 
