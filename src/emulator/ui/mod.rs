@@ -1,1 +1,1 @@
-pub mod tui;
+pub mod gui;

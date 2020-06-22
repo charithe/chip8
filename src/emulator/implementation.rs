@@ -56,7 +56,6 @@ pub enum Input {
     KeyD,
     KeyE,
     KeyF,
-    Quit,
 }
 
 pub struct Emulator {
@@ -69,7 +68,7 @@ pub struct Emulator {
     memory: [u8; MEM_SIZE],
     stack: [usize; STACK_SIZE],
     screen: display::Screen,
-    input: Option<Input>,
+    keyboard: [bool; 16],
     rom_end: usize,
 }
 
@@ -85,7 +84,7 @@ impl Emulator {
             memory: [0u8; MEM_SIZE],
             stack: [0; STACK_SIZE],
             screen: display::Screen::default(),
-            input: None,
+            keyboard: [false; 16],
             rom_end: 0,
         };
 
@@ -147,7 +146,7 @@ impl Emulator {
         match self.next_instruction() {
             Some(ins) => {
                 let op = ins.interpret()?;
-                debug!("{}\t{}", ins, op);
+                debug!("EXEC:\t{}\t{}", ins, op);
 
                 match op {
                     Op::ADD(reg, val) => self.do_add(reg, val),
@@ -191,14 +190,28 @@ impl Emulator {
         }
     }
 
-    pub fn send_input(&mut self, input: Input) {
-        self.input = Some(input);
+    pub fn key_press(&mut self, key: Input) {
+        debug!("KEY PRESS: {:?}", key);
+        self.keyboard[key as usize] = true;
     }
 
-    fn get_input(&mut self) -> Option<Input> {
-        let input = self.input;
-        self.input = None;
-        input
+    pub fn key_release(&mut self, key: Input) {
+        debug!("KEY RELEASE: {:?}", key);
+        self.keyboard[key as usize] = false;
+    }
+
+    fn pressed_key(&self) -> Option<u8> {
+        self.keyboard.iter().enumerate().find_map(|(i, pressed)| {
+            if *pressed == true {
+                Some(i as u8)
+            } else {
+                None
+            }
+        })
+    }
+
+    fn is_pressed(&self, key: u8) -> bool {
+        self.keyboard[key as usize]
     }
 
     fn do_add(&mut self, reg: Register, val: Value) -> StepResult {
@@ -216,14 +229,13 @@ impl Emulator {
     }
 
     fn do_addr(&mut self, reg1: Register, reg2: Register) -> StepResult {
-        let a = self.vx[reg1];
-        let b = self.vx[reg2];
+        let (v, overflow) = self.vx[reg1].overflowing_add(self.vx[reg2]);
+        self.vx[reg1] = v;
 
-        if let Some(sum) = a.checked_add(b) {
-            self.vx[reg1] = sum;
-        } else {
-            self.vx[reg1] = a.saturating_add(b);
+        if overflow {
             self.vx[0xF] = 1;
+        } else {
+            self.vx[0xF] = 0;
         }
 
         Ok(Some(Step::Nop))
@@ -324,8 +336,8 @@ impl Emulator {
     }
 
     fn do_ldkp(&mut self, reg: Register) -> StepResult {
-        if let Some(key) = self.get_input() {
-            self.vx[reg] = key as u8;
+        if let Some(key) = self.pressed_key() {
+            self.vx[reg] = key;
             Ok(Some(Step::Nop))
         } else {
             self.pc -= 2;
@@ -396,20 +408,18 @@ impl Emulator {
     }
 
     fn do_sknp(&mut self, reg: Register) -> StepResult {
-        if let Some(k) = self.get_input() {
-            if k as u8 != self.vx[reg] {
-                self.pc += 2;
-            }
+        let key = self.vx[reg];
+        if !self.is_pressed(key) {
+            self.pc += 2;
         }
 
         Ok(Some(Step::Nop))
     }
 
     fn do_skp(&mut self, reg: Register) -> StepResult {
-        if let Some(k) = self.get_input() {
-            if k as u8 == self.vx[reg] {
-                self.pc += 2;
-            }
+        let key = self.vx[reg];
+        if self.is_pressed(key) {
+            self.pc += 2;
         }
 
         Ok(Some(Step::Nop))
@@ -432,13 +442,16 @@ impl Emulator {
     }
 
     fn do_sub(&mut self, reg1: Register, reg2: Register) -> StepResult {
-        if self.vx[reg1] > self.vx[reg2] {
+        let (v, overflow) = self.vx[reg1].overflowing_sub(self.vx[reg2]);
+
+        self.vx[reg1] = v;
+
+        if overflow {
             self.vx[0xF] = 1;
         } else {
             self.vx[0xF] = 0;
         }
 
-        self.vx[reg1] = self.vx[reg1].saturating_sub(self.vx[reg2]);
         Ok(Some(Step::Nop))
     }
 
