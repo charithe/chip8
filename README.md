@@ -16,6 +16,8 @@ Keyboard
 
 Chip-8 Layout:
 
+| | | | |
+| --- | --- | --- | --- |
 | `1` | `2` | `3` | `C` |
 | `4` | `5` | `6` | `D` |
 | `7` | `8` | `9` | `E` |
@@ -23,6 +25,8 @@ Chip-8 Layout:
 
 Equivalent mapping to QWERTY:
 
+| | | | |
+| --- | --- | --- | --- |
 | <kbd>1</kbd> | <kbd>2</kbd> | <kbd>3</kbd> | <kbd>4</kbd> |
 | <kbd>Q</kbd> | <kbd>W</kbd> | <kbd>E</kbd> | <kbd>R</kbd> |
 | <kbd>A</kbd> | <kbd>S</kbd> | <kbd>D</kbd> | <kbd>F</kbd> |
